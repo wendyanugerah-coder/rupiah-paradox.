@@ -83,16 +83,27 @@ def series_status(record, now=None):
 
 class DownloadSession(requests.Session):
     def request(self, method, url, **kwargs):
-        kwargs.setdefault("timeout", (12, 45))
+        kwargs.setdefault("timeout", (8, 25))
         return super().request(method, url, **kwargs)
 
 
-def get_fred(session, spec, start, end):
-    response = session.get(spec["url"], params={"id": spec["id"], "cosd": start.date(), "coed": end.date()})
+def get_fred_api(session, spec, start, end):
+    response = session.get(spec["url"], params={
+        "series_id": spec["id"],
+        "api_key": os.environ[spec["key_env"]],
+        "file_type": "json",
+        "observation_start": start.date().isoformat(),
+        "observation_end": end.date().isoformat(),
+        "limit": 100000,
+    }, timeout=(8, 18), allow_redirects=False)
     response.raise_for_status()
-    csv = pd.read_csv(io.StringIO(response.text), na_values=["."])
-    return pd.Series(pd.to_numeric(csv[spec["id"]], errors="raise").to_numpy(),
-                     index=pd.to_datetime(csv["observation_date"], errors="raise"))
+    payload = response.json()
+    rows = payload["observations"]
+    if not rows or payload["count"] != len(rows) or payload["units"] != "lin":
+        raise DataError("FRED API returned incomplete or transformed observations.")
+    dates = pd.to_datetime([row["date"] for row in rows], format="%Y-%m-%d", errors="raise")
+    values = pd.to_numeric([np.nan if row["value"] == "." else row["value"] for row in rows], errors="raise")
+    return pd.Series(values, index=dates, dtype=float)
 
 
 def get_imf(session, spec, start, end):
@@ -115,15 +126,24 @@ def get_series(spec, start, end):
         from sources_bps import retrieve_id_cpi
 
         adapter = retrieve_id_cpi
+    elif provider in {"bls_api", "bls_bulk"}:
+        from sources_bls import retrieve_bls_api, retrieve_bls_bulk
+
+        adapter = {"bls_api": retrieve_bls_api, "bls_bulk": retrieve_bls_bulk}[provider]
+    elif provider in {"fed_target", "fed_dollar"}:
+        from sources_fed_direct import retrieve_fed_target, retrieve_fed_dollar
+
+        adapter = {"fed_target": retrieve_fed_target, "fed_dollar": retrieve_fed_dollar}[provider]
     else:
-        adapter = {"fred": get_fred, "imf": get_imf}[provider]
+        adapter = {"fred_api": get_fred_api, "imf": get_imf}[provider]
     with DownloadSession() as session:
         session.headers["User-Agent"] = "RupiahResearchDashboard/1.0 (public economic data)"
-        # The JISDOR POST is a read-only query and can safely be retried.
+        # These POSTs are read-only queries. Do not retry an access-denied response.
         session.mount("https://", HTTPAdapter(max_retries=Retry(
-            total=2, backoff_factor=0.6, status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "POST"] if provider == "bi_jisdor" else ["GET"],
-            raise_on_status=False,
+            total=2, read=1, status=1, backoff_factor=0.6, backoff_max=4,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"] if provider in {"bi_jisdor", "bls_api"} else ["GET"],
+            raise_on_status=False, respect_retry_after_header=False,
         )))
         return adapter(session, spec, start, end)
 
@@ -181,6 +201,7 @@ def monthlyize(key, native, spec, start, end):
         "source_id": spec.get("id"),
         "official_id": spec.get("original_id", spec.get("id")),
         "retrieval_url": spec["url"].format(series_id=spec["id"]),
+        "delivery": spec.get("delivery", spec["provider"]),
         "native_frequency": frequency,
         "units": spec["units"],
         "aggregation": aggregation,
@@ -209,19 +230,71 @@ def safe_error(error):
     if isinstance(error, requests.HTTPError):
         code = error.response.status_code if error.response is not None else "unknown"
         return f"HTTP {code}"
+    if isinstance(error, requests.Timeout):
+        return "Request timed out"
+    if isinstance(error, requests.ConnectionError):
+        # urllib3 wraps a repeated read timeout in a ConnectionError.
+        reason = getattr(error.args[0], "reason", None) if error.args else None
+        return "Read timeout after retries" if type(reason).__name__ == "ReadTimeoutError" else "ConnectionError"
     if isinstance(error, (DataError, ValueError, OSError)) and not isinstance(error, requests.RequestException):
         return f"{type(error).__name__}: {error}"
     return type(error).__name__
 
 
-def collect(config, start, end):
+def retrieve_monthly(key, spec, start, end, previous, previous_record):
+    errors = []
+    routes = spec.get("routes")
+    for route in routes or [spec]:
+        selected = spec | route
+        label = selected.get("delivery", selected["provider"])
+        key_env = selected.get("key_env")
+        if key_env and not os.environ.get(key_env, "").strip():
+            LOG.info("%s | skipping %s because %s is unset", key, label, key_env)
+            continue
+        try:
+            if selected.get("bps_method") == "distributor" and previous is None:
+                raise DataError("The BPS distributor requires a prior valid snapshot for comparison.")
+            native = get_series(selected, start, end)
+            monthly, record = monthlyize(key, native, selected, start, end)
+            if previous is not None:
+                aligned = monthly.reindex(previous.index)
+                if (previous.notna() & aligned.isna()).any():
+                    raise DataError("The feed would erase an existing monthly observation.")
+                if previous_record and record["latest_native_date"] < previous_record["latest_native_date"]:
+                    raise DataError("The feed ends before the last valid source date.")
+                if selected.get("bps_method") == "distributor":
+                    overlap = previous.notna() & aligned.notna()
+                    if not np.allclose(previous[overlap], aligned[overlap], rtol=0, atol=1e-8):
+                        raise DataError("BPS distributor history disagrees with the last valid snapshot.")
+            if routes and series_status(record, end)["stale"]:
+                raise DataError("The source is over three months old.")
+            return monthly, record
+        except Exception as error:
+            # A keyed endpoint can include the request URL in exceptions. Keep credentials out of logs.
+            if key_env and not isinstance(error, (requests.RequestException, DataError)):
+                message = type(error).__name__
+            else:
+                message = safe_error(error)
+            LOG.warning("%s | %s rejected | %s", key, label, message)
+            errors.append(f"{label}: {message}")
+    raise DataError("; ".join(errors) or "No configured route available.")
+
+
+def collect(config, start, end, previous=None, previous_metadata=None):
     specs = config["series"]
     results, records, errors = {}, {}, {}
     with ThreadPoolExecutor(max_workers=6) as pool:
-        pending = {key: pool.submit(get_series, spec, start, end) for key, spec in specs.items()}
+        pending = {
+            key: pool.submit(
+                retrieve_monthly, key, spec, start, end,
+                None if previous is None else previous.get(key),
+                None if previous_metadata is None else previous_metadata["series"].get(key),
+            )
+            for key, spec in specs.items()
+        }
         for key, task in pending.items():
             try:
-                results[key], records[key] = monthlyize(key, task.result(), specs[key], start, end)
+                results[key], records[key] = task.result()
             except Exception as error:
                 errors[key] = safe_error(error)
                 LOG.error("%s | %s", key, errors[key])
@@ -248,7 +321,8 @@ def _refresh_locked(config_path, snapshot_path, failure_path, preflight):
             config = yaml.safe_load(handle)
         start = pd.Timestamp(config["start_month"])
         end = pd.Timestamp(started.date())
-        frame, records = collect(config, start, end)
+        previous, previous_metadata = load_snapshot(snapshot_path) if snapshot_path.exists() else (None, None)
+        frame, records = collect(config, start, end, previous, previous_metadata)
         if records["policy_us_lower"]["latest_native_date"] != records["policy_us_upper"]["latest_native_date"]:
             raise DataError("U.S. policy target bounds end on different dates.")
         if (frame["policy_us_lower"] > frame["policy_us_upper"]).any():
@@ -262,18 +336,11 @@ def _refresh_locked(config_path, snapshot_path, failure_path, preflight):
         if preflight:
             LOG.info("Preflight passed. No snapshot written.")
             return True, "Data preflight passed."
-        if snapshot_path.exists():
-            previous, previous_metadata = load_snapshot(snapshot_path)
+        if previous is not None:
             still_observed = frame.reindex(index=previous.index, columns=previous.columns).notna()
             lost = (previous.notna() & ~still_observed).sum()
             if lost.any():
                 raise DataError(f"Refresh would erase published monthly observations: {lost[lost > 0].to_dict()}")
-            regressed = [
-                key for key, record in records.items()
-                if record["latest_native_date"] < previous_metadata["series"][key]["latest_native_date"]
-            ]
-            if regressed:
-                raise DataError(f"Refresh would move latest source dates backward: {regressed}")
         successful = utc_now().isoformat(timespec="seconds")
         metadata["last_successful_refresh_utc"] = successful
         rows = frame.reset_index()

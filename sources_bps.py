@@ -2,6 +2,7 @@
 
 import calendar
 import json
+import os
 import re
 
 import pandas as pd
@@ -60,13 +61,78 @@ def _monthly_changes(rows):
     return pd.Series(changes, dtype=float).sort_index()
 
 
-def retrieve_id_cpi(session, spec, start, end):
-    """Chain published CPI growth factors from the configured index anchor."""
+def _get_api_rates(session, spec, timeout):
+    key = os.environ.get(spec["key_env"])
+    if not key:
+        raise ValueError(f"BPS API requires environment variable {spec['key_env']}")
     response = session.get(
-        spec["url"], headers={"User-Agent": "Mozilla/5.0"}, timeout=(10, 30)
+        spec["url"],
+        params={
+            "model": "tablestatistic",
+            "domain": "0000",
+            "lang": "eng",
+            "id": spec["id"],
+            "key": key,
+        },
+        timeout=timeout,
+        allow_redirects=False,
     )
     response.raise_for_status()
-    rates = parse_bps_monthly_changes(response.content)
+    payload = response.json()
+    data = payload.get("data")
+    if payload.get("status") != "OK" or not isinstance(data, dict):
+        raise ValueError("BPS API did not return the requested table")
+    table = data.get("table")
+    if not isinstance(table, str) or not table.strip():
+        raise ValueError("BPS API response did not contain table HTML")
+    return parse_bps_monthly_changes(table)
+
+
+def _get_distributor_rates(content, spec):
+    document = html.fromstring(content)
+    embedded = document.xpath("//script[@id='eco-page-data']/text()")
+    if len(embedded) != 1:
+        raise ValueError("BPS distributor response is missing series data")
+    payload = json.loads(embedded[0])
+    expected = {"code": spec["id"], "country": "ID", "frequency": "M", "unit": "%"}
+    if any(payload.get(key) != value for key, value in expected.items()):
+        raise ValueError("BPS distributor returned a different indicator, frequency, or unit")
+    source = payload.get("source")
+    if not isinstance(source, dict) or source.get("code") != "bps":
+        raise ValueError("BPS distributor did not identify Statistics Indonesia as the source")
+
+    changes = {}
+    for point in payload.get("points", []):
+        period = point["period"]
+        if not re.fullmatch(r"\d{4}-\d{2}", period):
+            raise ValueError("BPS distributor returned a non-monthly date")
+        date = pd.to_datetime(period, format="%Y-%m")
+        if date in changes:
+            raise ValueError("BPS distributor repeated a month")
+        changes[date] = point["latest"]
+    rates = pd.Series(changes, dtype=float).dropna().sort_index()
+    if rates.empty:
+        raise ValueError("BPS distributor returned no monthly CPI observations")
+    return rates
+
+
+def retrieve_id_cpi(session, spec, start, end):
+    """Chain published CPI growth factors from the configured index anchor."""
+    timeout = (10, 30)
+    method = spec.get("bps_method", "html")
+    if method == "api":
+        rates = _get_api_rates(session, spec, timeout)
+    elif method in {"html", "distributor"}:
+        response = session.get(
+            spec["url"], headers={"User-Agent": "Mozilla/5.0"}, timeout=timeout
+        )
+        response.raise_for_status()
+        if method == "html":
+            rates = parse_bps_monthly_changes(response.content)
+        else:
+            rates = _get_distributor_rates(response.content, spec)
+    else:
+        raise ValueError(f"Unsupported BPS retrieval method: {method}")
     anchor = pd.Timestamp(spec["anchor_month"])
     if start.to_period("M").to_timestamp() < anchor:
         raise ValueError("Requested BPS CPI history begins before the anchor month")

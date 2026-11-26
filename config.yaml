@@ -1,4 +1,4 @@
-# Public economic data feeds. No API key is required for these endpoints.
+# Optional API keys are read from the environment. All series have keyless routes.
 start_month: '2014-01-01'
 series:
   idr:
@@ -16,7 +16,7 @@ series:
       '2018-06': 11
   cpi_id:
     id: OTEzIzE=
-    url: https://www.bps.go.id/en/statistics-table/1/OTEzIzE=/monthly-national-consumer-price-inflation-rate--m-to-m--sup1-sup--2022-100-.html
+    original_id: OTEzIzE=
     frequency: monthly
     units: Linked all-items CPI index (January 2014 = 100)
     anchor_month: '2014-01-01'
@@ -24,16 +24,28 @@ series:
     methodology: Chain-link published BPS month-over-month national headline CPI rates,
       including the January 2020 and January 2024 basket transitions. Derive year-over-year
       rates from the linked index.
-    provider: bps
     aggregation: none
     first_required: '2014-01-01'
-    source_url: https://www.bps.go.id/en/statistics-table/1/OTEzIzE=/monthly-national-consumer-price-inflation-rate--m-to-m--sup1-sup--2022-100-.html
+    source_url: &bps_table https://www.bps.go.id/en/statistics-table/1/OTEzIzE=/monthly-national-consumer-price-inflation-rate--m-to-m--sup1-sup--2022-100-.html
     source: BPS-Statistics Indonesia
+    routes:
+    - provider: bps
+      bps_method: api
+      delivery: BPS Web API
+      url: https://webapi.bps.go.id/v1/api/view
+      key_env: BPS_API_KEY
+    - provider: bps
+      bps_method: html
+      delivery: BPS national monthly inflation table
+      url: *bps_table
+    - provider: bps
+      bps_method: distributor
+      delivery: Chartlas distribution of BPS monthly inflation
+      id: id.cpi.mom.bps
+      url: https://chartlas.com/eco/chart/id.cpi.mom.bps
   cpi_us:
-    provider: fred
     id: CPIAUCNS
     original_id: CUUR0000SA0
-    url: https://fred.stlouisfed.org/graph/fredgraph.csv
     frequency: monthly
     aggregation: none
     units: Index, 1982–84 = 100, not seasonally adjusted
@@ -42,6 +54,18 @@ series:
     known_missing_months:
     - 2025-10
     first_required: '2014-01-01'
+    routes:
+    - provider: bls_api
+      id: CUUR0000SA0
+      url: https://api.bls.gov/publicAPI/v2/timeseries/data/
+    - provider: bls_bulk
+      id: CUUR0000SA0
+      url: https://download.bls.gov/pub/time.series/cu/cu.data.1.AllItems
+    - &fred_api
+      provider: fred_api
+      delivery: FRED Official API
+      url: https://api.stlouisfed.org/fred/series/observations
+      key_env: FRED_API_KEY
   myr:
     provider: imf
     id: MYS.XDC_USD.PA_RT.M
@@ -84,38 +108,44 @@ series:
     - 0
     - 30
   policy_us_lower:
-    provider: fred
     id: DFEDTARL
-    url: https://fred.stlouisfed.org/graph/fredgraph.csv
     frequency: daily
     aggregation: last
     units: Percent
     source: Federal Reserve Board
-    source_url: https://www.federalreserve.gov/monetarypolicy/openmarket.htm
+    source_url: &fed_policy_page https://www.federalreserve.gov/monetarypolicy/openmarket.htm
     positive: false
     bounds:
     - -5
     - 30
+    routes:
+    - &fed_target
+      provider: fed_target
+      url: *fed_policy_page
+    - *fred_api
   policy_us_upper:
-    provider: fred
     id: DFEDTARU
-    url: https://fred.stlouisfed.org/graph/fredgraph.csv
     frequency: daily
     aggregation: last
     units: Percent
     source: Federal Reserve Board
-    source_url: https://www.federalreserve.gov/monetarypolicy/openmarket.htm
+    source_url: *fed_policy_page
     positive: false
     bounds:
     - -5
     - 30
+    routes:
+    - *fed_target
+    - *fred_api
   dollar:
-    provider: fred
     id: DTWEXBGS
     original_id: JRXWTFB_N.B
-    url: https://fred.stlouisfed.org/graph/fredgraph.csv
     frequency: daily
     aggregation: mean
     units: Index, January 2006 = 100
     source: Federal Reserve Board H.10
     source_url: https://www.federalreserve.gov/releases/h10/summary/jrxwtfb_nb.htm
+    routes:
+    - provider: fed_dollar
+      url: https://www.federalreserve.gov/releases/h10/data/FRB_h10_xml.zip
+    - *fred_api
