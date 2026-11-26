@@ -1,0 +1,121 @@
+# Public economic data feeds. No API key is required for these endpoints.
+start_month: '2014-01-01'
+series:
+  idr:
+    id: USD
+    url: https://www.bi.go.id/biwebservice/wskursbi.asmx/getSubKursJisdor3
+    methodology_url: https://www.bi.go.id/en/fungsi-utama/moneter/informasi-kurs/default.aspx
+    source: Bank Indonesia (JISDOR)
+    units: IDR per USD
+    provider: bi_jisdor
+    source_url: https://www.bi.go.id/en/statistik/informasi-kurs/jisdor/Default.aspx
+    frequency: daily
+    aggregation: mean
+    # June 2018 had 11 publication days after holiday and election closures.
+    minimum_days_overrides:
+      '2018-06': 11
+  cpi_id:
+    id: OTEzIzE=
+    url: https://www.bps.go.id/en/statistics-table/1/OTEzIzE=/monthly-national-consumer-price-inflation-rate--m-to-m--sup1-sup--2022-100-.html
+    frequency: monthly
+    units: Linked all-items CPI index (January 2014 = 100)
+    anchor_month: '2014-01-01'
+    anchor_value: 100.0
+    methodology: Chain-link published BPS month-over-month national headline CPI rates,
+      including the January 2020 and January 2024 basket transitions. Derive year-over-year
+      rates from the linked index.
+    provider: bps
+    aggregation: none
+    first_required: '2014-01-01'
+    source_url: https://www.bps.go.id/en/statistics-table/1/OTEzIzE=/monthly-national-consumer-price-inflation-rate--m-to-m--sup1-sup--2022-100-.html
+    source: BPS-Statistics Indonesia
+  cpi_us:
+    provider: fred
+    id: CPIAUCNS
+    original_id: CUUR0000SA0
+    url: https://fred.stlouisfed.org/graph/fredgraph.csv
+    frequency: monthly
+    aggregation: none
+    units: Index, 1982–84 = 100, not seasonally adjusted
+    source: U.S. Bureau of Labor Statistics
+    source_url: https://www.bls.gov/regions/mid-atlantic/data/consumerpriceindexhistorical_us_table.htm
+    known_missing_months:
+    - 2025-10
+    first_required: '2014-01-01'
+  myr:
+    provider: imf
+    id: MYS.XDC_USD.PA_RT.M
+    url: https://api.imf.org/external/sdmx/2.1/data/IMF.STA,ER,4.0.1/{series_id}
+    source: IMF Exchange Rates (Malaysia)
+    source_url: https://data.imf.org/en/datasets/IMF.STA:ER
+    frequency: monthly
+    aggregation: none
+    units: MYR per USD
+  thb:
+    provider: imf
+    id: THA.XDC_USD.PA_RT.M
+    url: https://api.imf.org/external/sdmx/2.1/data/IMF.STA,ER,4.0.1/{series_id}
+    source: IMF Exchange Rates (Thailand)
+    source_url: https://data.imf.org/en/datasets/IMF.STA:ER
+    frequency: monthly
+    aggregation: none
+    units: THB per USD
+  php:
+    provider: imf
+    id: PHL.XDC_USD.PA_RT.M
+    url: https://api.imf.org/external/sdmx/2.1/data/IMF.STA,ER,4.0.1/{series_id}
+    source: IMF Exchange Rates (Philippines)
+    source_url: https://data.imf.org/en/datasets/IMF.STA:ER
+    frequency: monthly
+    aggregation: none
+    units: PHP per USD
+  policy_id:
+    id: BIS,WS_CBPOL,1.0/M.ID
+    url: https://stats.bis.org/api/v1/data/BIS,WS_CBPOL,1.0/M.ID
+    methodology_url: https://www.bi.go.id/en/fungsi-utama/moneter/bi-rate/default.aspx
+    distribution_url: https://data.bis.org/topics/CBPOL/BIS%2CWS_CBPOL%2C1.0/M.ID?view=observations
+    source: Bank Indonesia (via BIS)
+    units: percent per year
+    provider: bi_policy
+    source_url: https://www.bi.go.id/en/statistik/indikator/bi-rate.aspx
+    frequency: monthly
+    aggregation: none
+    bounds:
+    - 0
+    - 30
+  policy_us_lower:
+    provider: fred
+    id: DFEDTARL
+    url: https://fred.stlouisfed.org/graph/fredgraph.csv
+    frequency: daily
+    aggregation: last
+    units: Percent
+    source: Federal Reserve Board
+    source_url: https://www.federalreserve.gov/monetarypolicy/openmarket.htm
+    positive: false
+    bounds:
+    - -5
+    - 30
+  policy_us_upper:
+    provider: fred
+    id: DFEDTARU
+    url: https://fred.stlouisfed.org/graph/fredgraph.csv
+    frequency: daily
+    aggregation: last
+    units: Percent
+    source: Federal Reserve Board
+    source_url: https://www.federalreserve.gov/monetarypolicy/openmarket.htm
+    positive: false
+    bounds:
+    - -5
+    - 30
+  dollar:
+    provider: fred
+    id: DTWEXBGS
+    original_id: JRXWTFB_N.B
+    url: https://fred.stlouisfed.org/graph/fredgraph.csv
+    frequency: daily
+    aggregation: mean
+    units: Index, January 2006 = 100
+    source: Federal Reserve Board H.10
+    source_url: https://www.federalreserve.gov/releases/h10/summary/jrxwtfb_nb.htm

@@ -1,0 +1,8 @@
+streamlit==1.67.0
+plotly==6.8.0
+pandas==2.2.3
+numpy==2.3.5
+PyYAML==6.0.3
+requests==2.34.2
+lxml==6.0.2
+filelock==3.20.3
