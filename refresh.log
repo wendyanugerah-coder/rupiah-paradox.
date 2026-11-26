@@ -1,0 +1,16 @@
+INFO Refresh started at 2026-11-26T03:27:44+00:00
+INFO idr | USD daily via Bank Indonesia web service | 2014-01-02 to 2026-11-25 | 3123 native values | 155 monthly values | latest 18303 | stale=False | incomplete=['2026-11-01'] | missing=[]
+INFO cpi_id | OTEzIzE= monthly via bps | 2014-01-01 to 2026-10-01 | 154 native values | 154 monthly values | latest 150.5170381 | stale=False | incomplete=[] | missing=[]
+INFO cpi_us | CPIAUCNS monthly via fred | 2014-01-01 to 2026-10-01 | 153 native values | 153 monthly values | latest 337.511 | stale=False | incomplete=[] | missing=['2025-10-01']
+INFO myr | MYS.XDC_USD.PA_RT.M monthly via imf | 2014-01-01 to 2026-10-01 | 154 native values | 154 monthly values | latest 4.081777273 | stale=False | incomplete=[] | missing=[]
+INFO thb | THA.XDC_USD.PA_RT.M monthly via imf | 2014-01-01 to 2026-10-01 | 154 native values | 154 monthly values | latest 33.64323158 | stale=False | incomplete=[] | missing=[]
+INFO php | PHL.XDC_USD.PA_RT.M monthly via imf | 2014-01-01 to 2026-10-01 | 154 native values | 154 monthly values | latest 63.09963636 | stale=False | incomplete=[] | missing=[]
+INFO policy_id | BIS,WS_CBPOL,1.0/M.ID monthly via BIS distribution of Bank Indonesia policy rates | 2014-01-01 to 2026-10-01 | 154 native values | 154 monthly values | latest 5.75 | stale=False | incomplete=[] | missing=[]
+INFO policy_us_lower | DFEDTARL daily via fred | 2014-01-01 to 2026-11-25 | 4712 native values | 155 monthly values | latest 3.75 | stale=False | incomplete=['2026-11-01'] | missing=[]
+INFO policy_us_upper | DFEDTARU daily via fred | 2014-01-01 to 2026-11-25 | 4712 native values | 155 monthly values | latest 4 | stale=False | incomplete=['2026-11-01'] | missing=[]
+INFO dollar | DTWEXBGS daily via fred | 2014-01-02 to 2026-11-20 | 3210 native values | 155 monthly values | latest 123.5978 | stale=False | incomplete=['2026-11-01'] | missing=[]
+INFO Base 2015 | latest complete common month 2026-10 | nominal 35.80955021 | inflation -2.58289775 | real 38.39244796
+INFO Base 2017 | latest complete common month 2026-10 | nominal 29.79629027 | inflation -6.24145663 | real 36.03774691
+INFO Base 2019 | latest complete common month 2026-10 | nominal 23.94892718 | inflation -8.64826393 | real 32.59719111
+INFO Base 2021 | latest complete common month 2026-10 | nominal 24.66628177 | inflation -9.11232549 | real 33.77860727
+INFO Refresh succeeded at 2026-11-26T03:28:07+00:00 | published 155 monthly rows to snapshot.json
